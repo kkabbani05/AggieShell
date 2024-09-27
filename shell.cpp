@@ -23,6 +23,13 @@ using namespace std;
 
 int main()
 {
+
+    const size_t dic_size = 1024;
+    char current_directory[dic_size];
+
+    char prev_directory[dic_size];
+    getcwd(prev_directory, dic_size);
+
     for (;;)
     {
         // need date/time, username, and absolute path to current dir
@@ -31,15 +38,8 @@ int main()
         time_t current_time;
         time(&current_time);
         string cur_time = ctime(&current_time);
-
-        const size_t dic_size = 1024;
-        char current_directory[dic_size];
-
-        char prev_directory[dic_size];
-        getcwd(prev_directory, dic_size);
-        getcwd(current_directory, dic_size);
-
         // use compy to keep previous
+        getcwd(current_directory, dic_size);
 
         cout << cur_time.substr(4, 16) << username << ":" << current_directory;
 
@@ -94,20 +94,41 @@ int main()
 
             // IF The First Command is cd we do not want to use fork/exec
 
-            // if(tknr.commands.at(0)->args.at(0) == "cd"){
-            //     string new_dir = tknr.commands.at(0)->args.at(1);
-            //     if (new_dir == "-"){
-            //         cout << "in here" << endl;
-            //     }
-            //     else{
-            //         strcpy(prev_directory, current_directory);
-            //         strcpy(current_directory, new_dir.c_str()); 
-            //         if(chdir((char *)current_directory) != 0){
-            //             cerr << "Directory not found" << endl; //what should this output be
-            //         }
-            //     }
-            //     continue;
-            // }
+            if (tknr.commands.at(0)->args.at(0) == "cd")
+            {
+                string new_dir = tknr.commands.at(0)->args.at(1);
+                if (new_dir == "-")
+                {
+                    // cout << "prev " << prev_directory << endl;
+                    // cout << "current " << current_directory << endl;
+
+                    strcpy(current_directory, prev_directory);
+                    getcwd(prev_directory, dic_size);
+                    if (chdir((char *)(current_directory)) != 0)
+                    {
+                        cerr << "Directory not found" << endl; // what should this output be
+                    }
+                }
+                else if(new_dir.substr(0,2) == ".."){
+                    getcwd(prev_directory, dic_size);
+                    if (chdir((char *)new_dir.c_str()) != 0)
+                    {
+                        cerr << "Directory not found" << endl; // what should this output be
+                    }
+                }
+                else
+                {
+                    getcwd(prev_directory, dic_size);
+                    strcpy(current_directory, new_dir.c_str());
+                    // cout << "prev " << prev_directory << endl;
+                    // cout << "current " << current_directory << endl;
+                    if (chdir((char *)current_directory) != 0)
+                    {
+                        cerr << "Directory not found" << endl; // what should this output be
+                    }
+                }
+                continue;
+            }
 
             pid_t pid = fork();
             if (pid < 0)
@@ -121,11 +142,13 @@ int main()
                 // run single commands with no arguments
                 // Loop through each of the command
 
-                if(tknr.commands.at(0)->hasInput()){
+                if (tknr.commands.at(0)->hasInput())
+                {
                     int fd = open(tknr.commands.at(0)->in_file.c_str(), O_RDONLY, 0600);
                     dup2(fd, 0);
                 }
-                if(tknr.commands.at(0)->hasOutput()){
+                if (tknr.commands.at(0)->hasOutput())
+                {
                     int fd = open(tknr.commands.at(0)->out_file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
                     dup2(fd, 1);
                 }
@@ -153,8 +176,6 @@ int main()
                     // dup2(c2pfd[1], 1);
                     // /* Child closes read end of c2p */
                     // close(c2pfd[0]);
-
-
                 }
             }
             else
