@@ -83,14 +83,14 @@ int main()
         for (size_t i = 0; i < tknr.commands.size(); i++)
         {
             // create pipe
-            // int c2pfd[2]; /* child-to-parent */
-            // char buffer[10];
-            // memset(buffer, 0, sizeof(buffer));
-            // if ((pipe(c2pfd) < 0))
-            // {
-            //     printf("ERROR: Failed to open pipe\n");
-            //     exit(1);
-            // }
+            int pip[2]; /* child-to-parent */
+            char buffer[10];
+            memset(buffer, 0, sizeof(buffer));
+            if ((pipe(pip) < 0))
+            {
+                printf("ERROR: Failed to open pipe\n");
+                exit(1);
+            }
 
             // IF The First Command is cd we do not want to use fork/exec
 
@@ -172,19 +172,33 @@ int main()
                 }
                 else
                 {
+                    char **args = new char *[tknr.commands.at(i)->args.size()];
+                    for (size_t j = 0; j < tknr.commands.at(i)->args.size(); j++)
+                    {
+                        args[j] = (char *)tknr.commands.at(i)->args.at(j).c_str();
+                    }
+                    /* Child closes read end of c2p */
+                    close(pip[0]);
                     // standard out to point write end
-                    // dup2(c2pfd[1], 1);
-                    // /* Child closes read end of c2p */
-                    // close(c2pfd[0]);
+                    dup2(pip[1], 1);
+                    
+                    if (execvp(args[0], args) < 0)
+                    { // error check
+                        perror("execvp");
+                        exit(2);
+                    }
+
+                    delete[] args;
                 }
             }
             else
             { // if parent, wait for child to finish
 
                 // close write end
+                close(pip[1]);
                 // redirect to the read end
-                // dup2(c2pfd[0], 0);
-                // close(c2pfd[1]);
+                dup2(pip[0], 0);
+                
 
                 int status = 0;
                 waitpid(pid, &status, 0);
