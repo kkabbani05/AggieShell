@@ -30,11 +30,20 @@ int main()
     char prev_directory[dic_size];
     getcwd(prev_directory, dic_size);
 
+    int fd_org_in = dup(0);
+    int fd_org_out = dup(1);
+    vector<pid_t> background_process;
     for (;;)
     {
+
+        //CHECK BACKGROUND
+        int Backstatus;
+        for(size_t i = 0; i < background_process.size(); i++){
+            waitpid(background_process.at(i), &Backstatus, WNOHANG);
+        }
+
         // need date/time, username, and absolute path to current dir
         auto username = getenv("USER");
-
         time_t current_time;
         time(&current_time);
         string cur_time = ctime(&current_time);
@@ -63,37 +72,10 @@ int main()
             continue;
         }
 
-        // print out every command token-by-token on individual lines
-        // prints to cerr to avoid influencing autograder
-        // for (auto cmd : tknr.commands) {
-        //     for (auto str : cmd->args) {
-        //         cerr << "|" << str << "| ";
-        //     }
-        //     if (cmd->hasInput()) {
-        //         cerr << "in< " << cmd->in_file << " ";
-        //     }
-        //     if (cmd->hasOutput()) {
-        //         cerr << "out> " << cmd->out_file << " ";
-        //     }
-        //     cerr << endl;
-        // }
-
-        // fork to create child
-
-        for (size_t i = 0; i < tknr.commands.size(); i++)
+        // If it is a single commeand
+        cout << tknr.commands.size() << endl;
+        if (tknr.commands.size() == 1)
         {
-            // create pipe
-            int pip[2]; /* child-to-parent */
-            char buffer[10];
-            memset(buffer, 0, sizeof(buffer));
-            if ((pipe(pip) < 0))
-            {
-                printf("ERROR: Failed to open pipe\n");
-                exit(1);
-            }
-
-            // IF The First Command is cd we do not want to use fork/exec
-
             if (tknr.commands.at(0)->args.at(0) == "cd")
             {
                 string new_dir = tknr.commands.at(0)->args.at(1);
@@ -109,7 +91,8 @@ int main()
                         cerr << "Directory not found" << endl; // what should this output be
                     }
                 }
-                else if(new_dir.substr(0,2) == ".."){
+                else if (new_dir.substr(0, 2) == "..")
+                {
                     getcwd(prev_directory, dic_size);
                     if (chdir((char *)new_dir.c_str()) != 0)
                     {
@@ -127,38 +110,34 @@ int main()
                         cerr << "Directory not found" << endl; // what should this output be
                     }
                 }
-                continue;
             }
-
-            pid_t pid = fork();
-            if (pid < 0)
-            { // error check
-                perror("fork");
-                exit(2);
-            }
-
-            if (pid == 0)
-            { // if child, exec to run command
-                // run single commands with no arguments
-                // Loop through each of the command
-
-                if (tknr.commands.at(0)->hasInput())
-                {
-                    int fd = open(tknr.commands.at(0)->in_file.c_str(), O_RDONLY, 0600);
-                    dup2(fd, 0);
-                }
-                if (tknr.commands.at(0)->hasOutput())
-                {
-                    int fd = open(tknr.commands.at(0)->out_file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
-                    dup2(fd, 1);
+            else
+            {
+                pid_t pid = fork();
+                if (pid < 0)
+                { // error check
+                    perror("fork");
+                    exit(2);
                 }
 
-                if (i == tknr.commands.size() - 1)
-                {
-                    char **args = new char *[tknr.commands.at(i)->args.size()];
-                    for (size_t j = 0; j < tknr.commands.at(i)->args.size(); j++)
+                if (pid == 0)
+                {   
+                    //Check if its a background proccess
+                    if (tknr.commands.at(0)->hasInput())
                     {
-                        args[j] = (char *)tknr.commands.at(i)->args.at(j).c_str();
+                        int fd = open(tknr.commands.at(0)->in_file.c_str(), O_RDONLY, 0600);
+                        dup2(fd, 0);
+                    }
+                    if (tknr.commands.at(0)->hasOutput())
+                    {
+                        int fd = open(tknr.commands.at(0)->out_file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+                        dup2(fd, 1);
+                    }
+
+                    char **args = new char *[tknr.commands.at(0)->args.size()];
+                    for (size_t j = 0; j < tknr.commands.at(0)->args.size(); j++)
+                    {
+                        args[j] = (char *)tknr.commands.at(0)->args.at(j).c_str();
                     }
 
                     //
@@ -171,42 +150,116 @@ int main()
                     delete[] args;
                 }
                 else
+                { // if parent, wait for child to finish
+                    int status = 0;
+                    if (tknr.commands.at(0)->isBackground()){ //check this 
+                        background_process.push_back(pid);
+                    }
+                    else{
+                        waitpid(pid, &status, 0);
+                        if (status > 1)
+                        { // exit if child didn't exec properly
+                            exit(status);
+                        }   
+                    }
+                    
+                }
+            }
+        }
+        else
+        {
+            vector<pid_t> pid_list;
+            for (size_t i = 0; i < tknr.commands.size(); i++)
+            {
+                // create pipe
+                int pip[2]; /* child-to-parent */
+                char buffer[10];
+                memset(buffer, 0, sizeof(buffer));
+                if ((pipe(pip) < 0))
                 {
+                    printf("ERROR: Failed to open pipe\n");
+                    exit(1);
+                }
+
+                pid_t pid = fork();
+
+                if (pid < 0)
+                { // error check
+                    perror("fork");
+                    exit(2);
+                }
+
+                if (pid == 0)
+                { // if child, exec to run command
+                    // If it it First or last commond check for redirection
+                    if ((i == tknr.commands.size() - 1) || (i == 0))
+                    {
+                        if (tknr.commands.at(i)->hasInput())
+                        {
+                            int fd = open(tknr.commands.at(i)->in_file.c_str(), O_RDONLY, 0600);
+                            dup2(fd, 0);
+                        }
+                        if (tknr.commands.at(i)->hasOutput())
+                        {
+                            int fd = open(tknr.commands.at(i)->out_file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+                            dup2(fd, 1);
+                        }
+                    }
+
+                    // If Not last comman redirect to write end of pipe
+                    if (i != tknr.commands.size() - 1)
+                    {
+                        close(pip[0]);
+                        // standard out to point write end
+                        dup2(pip[1], 1);
+                    }
+
+                    // Run of execvp
                     char **args = new char *[tknr.commands.at(i)->args.size()];
                     for (size_t j = 0; j < tknr.commands.at(i)->args.size(); j++)
                     {
                         args[j] = (char *)tknr.commands.at(i)->args.at(j).c_str();
                     }
-                    /* Child closes read end of c2p */
-                    close(pip[0]);
-                    // standard out to point write end
-                    dup2(pip[1], 1);
-                    
+
                     if (execvp(args[0], args) < 0)
                     { // error check
                         perror("execvp");
                         exit(2);
                     }
-
                     delete[] args;
                 }
-            }
-            else
-            { // if parent, wait for child to finish
+                else
+                { // if parent, wait for child to finish
 
-                // close write end
-                close(pip[1]);
-                // redirect to the read end
-                dup2(pip[0], 0);
-                
+                    // close write end
+                    close(pip[1]);
+                    // redirect to the read end
+                    dup2(pip[0], 0);
+                    
+                    if (tknr.commands.at(i)->isBackground()){ //check this 
+                        background_process.push_back(pid);
+                    }
+                    else{
+                        pid_list.push_back(pid);
+                    }
 
-                int status = 0;
-                waitpid(pid, &status, 0);
-                if (status > 1)
-                { // exit if child didn't exec properly
-                    exit(status);
+                    if (i == tknr.commands.size() - 1)
+                    {
+                        int status = 0;
+                        for (size_t j = 0; j < pid_list.size(); j++)
+                        {
+                            status = 0;
+                            waitpid(pid_list.at(j), &status, 0);
+                            if (status > 1)
+                            { // exit if child didn't exec properly
+                                exit(status);
+                            }
+                        }
+                    }
                 }
             }
         }
+        dup2(fd_org_in, 0);
+        dup2(fd_org_out, 1);
     }
 }
