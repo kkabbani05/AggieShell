@@ -73,7 +73,7 @@ int main()
         }
 
         // If it is a single commeand
-        cout << tknr.commands.size() << endl;
+        // cout << tknr.commands.size() << endl;
         if (tknr.commands.size() == 1)
         {
             if (tknr.commands.at(0)->args.at(0) == "cd")
