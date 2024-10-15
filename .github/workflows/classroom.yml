@@ -16,6 +16,8 @@ jobs:
     if: github.actor != 'github-classroom[bot]'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 1377ef70dbc2b2d0ffc1fbc14ead9f64128613fb
       - run: |
           repo_pattern="([^-]*)-([^-]*)-([^-]*)-(.*)"
           [[ ${{github.event.repository.name}} =~ $repo_pattern ]]
